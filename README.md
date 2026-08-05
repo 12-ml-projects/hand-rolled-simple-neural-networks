@@ -1,0 +1,2 @@
+# Neural Networks from Scratch
+This repository contains the simple neural networks seen in chapter 1 of "12 machine learning projects". They include a simple perceptron model and a deeper feedforward neural network, a convolutional neural network, and backpropagation code.

@@ -7,9 +7,14 @@ from .operator import Operator
 T = TypeVar("T", bound=ValueLike)
 
 
-class Source(Operator[T]):
+class Abs(Operator[T]):
     def forward(self, x: T) -> T:  # type: ignore[override]
-        return x
+        return abs(x)  # type: ignore
 
     def backward(self, adjoint: T, x: T) -> tuple[T]:  # type: ignore[override]
-        return tuple()  # type: ignore
+        if x > 0:  # type: ignore
+            return (adjoint,)
+        elif x < 0:  # type: ignore
+            return (-adjoint,)
+        else:
+            return (0,)  # type: ignore

@@ -2,12 +2,23 @@ from typing import Generic, TypeVar
 
 from src.custom_types import ValueLike
 from src.dag import DAG
-from src.operators import Add, Mul, Neg, Operator, Source, Sub, TrueDiv
+from src.operators import (
+    Abs,
+    Add,
+    Mul,
+    Neg,
+    Operator,
+    Pow,
+    Source,
+    Sub,
+    TrueDiv,
+    UnaryPow,
+)
 
 T = TypeVar("T", bound=ValueLike)
 
 
-class Tensor(ValueLike, Generic[T]):
+class Tensor(Generic[T]):
     _dag: DAG[T]
 
     def __init__(self, value: T):
@@ -45,16 +56,19 @@ class Tensor(ValueLike, Generic[T]):
 
         return bool(self.value == other_value)
 
+    def backward(self, adjoint: T = 1.0) -> None:  # type: ignore
+        self._dag.backward(adjoint)
+
     def __add__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Add(), self, other)
 
-    def __radd__(self, other: T) -> "Tensor[T]":
+    def __radd__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Add(), other, self)
 
     def __sub__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Sub(), self, other)
 
-    def __rsub__(self, other: T) -> "Tensor[T]":
+    def __rsub__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Sub(), other, self)
 
     def __neg__(self) -> "Tensor[T]":
@@ -63,11 +77,24 @@ class Tensor(ValueLike, Generic[T]):
     def __mul__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Mul(), self, other)
 
-    def __rmul__(self, other: T) -> "Tensor[T]":
+    def __rmul__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Mul(), other, self)
 
     def __truediv__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(TrueDiv(), self, other)
 
-    def __rtruediv__(self, other: T) -> "Tensor[T]":
+    def __rtruediv__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(TrueDiv(), other, self)
+
+    def __pow__(self, other: "Tensor[T] | T") -> "Tensor[T]":
+        if isinstance(other, Tensor):
+            return self._apply(Pow(), self, other)
+
+        return self._apply(UnaryPow(other), self)
+
+    def __rpow__(self, other: "Tensor[T] | T") -> "Tensor[T]":
+        # NOTE: this is only reached if `other` is not a tensor
+        return self._apply(Pow(), other, self)
+
+    def __abs__(self) -> "Tensor[T]":
+        return self._apply(Abs(), self)

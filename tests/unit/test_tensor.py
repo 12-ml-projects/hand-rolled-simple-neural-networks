@@ -3,17 +3,27 @@ from typing import Callable
 
 import pytest
 
-from src.operators import Add, Mul, Neg, Source, Sub, TrueDiv
+from src.operators import Abs, Add, Mul, Neg, Pow, Source, Sub, TrueDiv
 from src.tensor import Tensor
+from tests.helpers.finite_difference.approx_grad import approx_grad
 
 BinaryOp = Callable[[object, object], object]
+UnaryOp = Callable[[object], object]
 
 
+# Applied to (5.0, 10.0).
 BINARY_CASES = [
     (operator.add, Add, 15.0),
     (operator.sub, Sub, -5.0),
     (operator.mul, Mul, 50.0),
     (operator.truediv, TrueDiv, 0.5),
+    (operator.pow, Pow, 9765625.0),
+]
+
+# Applied to -5.0.
+UNARY_CASES = [
+    (operator.neg, Neg, 5.0),
+    (operator.abs, Abs, 5.0),
 ]
 
 
@@ -25,8 +35,15 @@ class TestForward:
         assert isinstance(result, Tensor)
         assert result.value == pytest.approx(expected)
 
-    def test_negation(self) -> None:
-        assert (-Tensor(5.0)).value == -5.0
+    @pytest.mark.parametrize(("op", "_", "expected"), UNARY_CASES)
+    def test_unary_operations(self, op: UnaryOp, _: type, expected: float) -> None:
+        result = op(Tensor(-5.0))
+
+        assert isinstance(result, Tensor)
+        assert result.value == pytest.approx(expected)
+
+    def test_pow_with_fractional_exponent(self) -> None:
+        assert (Tensor(9.0) ** 0.5).value == pytest.approx(3.0)
 
     def test_chained_expression(self) -> None:
         x = Tensor(2.0)
@@ -96,11 +113,25 @@ class TestGraph:
         assert isinstance(result._dag.operator, operator_type)
         assert result._dag.arity == 2
 
-    def test_negation_records_its_operator(self) -> None:
-        result = -Tensor(5.0)
+    @pytest.mark.parametrize(("op", "operator_type", "_"), UNARY_CASES)
+    def test_unary_operation_records_its_operator(
+        self, op: UnaryOp, operator_type: type, _: float
+    ) -> None:
+        result = op(Tensor(-5.0))
 
-        assert isinstance(result._dag.operator, Neg)
+        assert isinstance(result, Tensor)
+        assert isinstance(result._dag.operator, operator_type)
         assert result._dag.arity == 1
+
+    def test_reflected_pow_keeps_operand_order(self) -> None:
+        x = Tensor(3.0)
+
+        result = 2.0**x
+
+        base, exponent = result._dag.dependencies
+        assert base.value == 2.0
+        assert exponent is x._dag
+        assert result.value == pytest.approx(8.0)
 
     def test_dependencies_are_shared_not_copied(self) -> None:
         x = Tensor(5.0)
@@ -159,3 +190,58 @@ class TestEquality:
         y = Tensor(5.0)
 
         assert len({x, y, x}) == 2
+
+
+class TestBackward:
+    def test_backward_propagates_adjoint(self) -> None:
+        x = Tensor(2.0)
+        y = Tensor(3.0)
+
+        z = x * y * x + x * x
+        z.backward()
+
+        assert z._dag.adjoint == pytest.approx(1.0)
+        assert x._dag.adjoint == pytest.approx(16.0)
+        assert y._dag.adjoint == pytest.approx(4.0)
+
+    @pytest.mark.parametrize(
+        "x_val,y_val,lambda_fn",
+        [
+            (2.0, 3.0, lambda x, y: x**y),
+            (2.0, 3.0, lambda x, y: x * y),
+            (2.0, 3.0, lambda x, y: x + y),
+            (2.0, 3.0, lambda x, y: x - y),
+            (2.0, 3.0, lambda x, y: x / y),
+            (2.0, 3.0, lambda x, y: x / y),
+        ],
+    )
+    def test_binary_operators(self, x_val, y_val, lambda_fn) -> None:
+        x = Tensor(x_val)
+        y = Tensor(y_val)
+
+        z = lambda_fn(x, y)
+        z.backward()
+
+        assert x._dag.adjoint == pytest.approx(
+            approx_grad(lambda_fn, [x.value, y.value])[0]
+        )
+        assert y._dag.adjoint == pytest.approx(
+            approx_grad(lambda_fn, [x.value, y.value])[1]
+        )
+
+    @pytest.mark.parametrize(
+        "x_val,lambda_fn",
+        [
+            (2.0, lambda x: -x),
+            (2.0, lambda x: x**2),
+            (2.0, lambda x: x),
+            (-2.0, lambda x: abs(x)),
+        ],
+    )
+    def test_unary_operators(self, x_val, lambda_fn) -> None:
+        x = Tensor(x_val)
+
+        z = lambda_fn(x)
+        z.backward()
+
+        assert x._dag.adjoint == pytest.approx(approx_grad(lambda_fn, [x.value])[0])

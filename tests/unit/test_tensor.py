@@ -245,3 +245,78 @@ class TestBackward:
         z.backward()
 
         assert x._dag.adjoint == pytest.approx(approx_grad(lambda_fn, [x.value])[0])
+
+
+class TestGradients:
+    def test_requires_grad_flag(self) -> None:
+        x = Tensor(2.0)
+        y = Tensor(3.0, requires_grad=False)
+
+        z = x * y
+        z.backward()
+
+        assert x._dag.adjoint == pytest.approx(3.0)
+        assert y._dag.adjoint is None
+
+    def test_pow_with_false_requires_grad(self) -> None:
+        x = Tensor(2.0)
+        n = Tensor(3.0, requires_grad=False)
+
+        z = x**n
+        z.backward()
+
+        assert x._dag.adjoint == pytest.approx(12.0)
+        assert n._dag.adjoint is None
+
+    def test_reset_clears_intermediates_but_keeps_leaves(self) -> None:
+        x = Tensor(2.0)
+        y = Tensor(3.0)
+
+        inner = x * y
+        z = inner + x
+        z.backward()
+
+        assert inner._dag.adjoint == pytest.approx(1.0)
+
+        z._dag.reset()
+
+        assert inner._dag.adjoint is None
+        assert z._dag.adjoint is None
+
+        # Leaves keep their gradients; only zero_grad() clears those.
+        assert x._dag.adjoint == pytest.approx(4.0)
+        assert y._dag.adjoint == pytest.approx(2.0)
+
+    def test_backward_twice_leaves_intermediates_unchanged(self) -> None:
+        x = Tensor(2.0)
+        y = Tensor(3.0)
+
+        # A chain deep enough that every node between the leaves and the root
+        # carries an adjoint of its own.
+        inner = x * y
+        outer = inner * x
+        z = outer + y
+
+        z.backward()
+        first = (z._dag.adjoint, outer._dag.adjoint, inner._dag.adjoint)
+
+        z.backward()
+        second = (z._dag.adjoint, outer._dag.adjoint, inner._dag.adjoint)
+
+        assert first == (1.0, 1.0, pytest.approx(2.0))
+        assert second == first
+
+    def test_backward_twice_accumulates_on_leaves(self) -> None:
+        x = Tensor(2.0)
+
+        z = x * x
+        z.backward()
+        assert x._dag.adjoint == pytest.approx(4.0)
+
+        # Leaf gradients pile up by design, so a minibatch can sum its steps.
+        z.backward()
+        assert x._dag.adjoint == pytest.approx(8.0)
+
+        x.zero_grad()
+        z.backward()
+        assert x._dag.adjoint == pytest.approx(4.0)

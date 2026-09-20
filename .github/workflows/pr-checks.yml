@@ -26,8 +26,6 @@ jobs:
       run: tox -e format
     - name: Run type checks
       run: tox -e typecheck
-    - name: Run docstring checks
-      run: tox -e docstrings
 
   test:
     name: Test

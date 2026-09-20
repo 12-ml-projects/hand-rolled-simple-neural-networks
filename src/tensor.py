@@ -21,12 +21,27 @@ T = TypeVar("T", bound=ValueLike)
 class Tensor(Generic[T]):
     _dag: DAG[T]
 
-    def __init__(self, value: T):
-        self._dag = DAG(Source(), value=value)
+    def __init__(self, value: T, requires_grad: bool = True):
+        self._dag = DAG(Source(), value=value, _requires_grad=requires_grad)
 
     @property
     def value(self) -> T:
         return self._dag.value
+
+    @value.setter
+    def value(self, value: T) -> None:
+        if self._dag.dependencies:
+            raise ValueError("Cannot set the value of a non-leaf Tensor.")
+
+        self._dag.value = value
+
+    @property
+    def grad(self) -> T | None:
+        return self._dag.adjoint
+
+    @property
+    def requires_grad(self) -> bool:
+        return self._dag.requires_grad
 
     @classmethod
     def _from_dag(cls, dag: DAG[T]) -> "Tensor[T]":
@@ -59,6 +74,12 @@ class Tensor(Generic[T]):
     def backward(self, adjoint: T = 1.0) -> None:  # type: ignore
         self._dag.backward(adjoint)
 
+    def reset(self) -> None:
+        self._dag.reset()
+
+    def zero_grad(self) -> None:
+        self._dag.zero_grad()
+
     def __add__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         return self._apply(Add(), self, other)
 
@@ -87,14 +108,20 @@ class Tensor(Generic[T]):
         return self._apply(TrueDiv(), other, self)
 
     def __pow__(self, other: "Tensor[T] | T") -> "Tensor[T]":
-        if isinstance(other, Tensor):
-            return self._apply(Pow(), self, other)
+        if isinstance(other, Tensor) and not other.requires_grad:
+            return self._apply(UnaryPow(other.value), self)
 
-        return self._apply(UnaryPow(other), self)
+        if not isinstance(other, Tensor):
+            return self._apply(UnaryPow(other), self)
+
+        return self._apply(Pow(), self, other)
 
     def __rpow__(self, other: "Tensor[T] | T") -> "Tensor[T]":
         # NOTE: this is only reached if `other` is not a tensor
-        return self._apply(Pow(), other, self)
+        if self.requires_grad:
+            return self._apply(Pow(), other, self)
+
+        return self._apply(UnaryPow(self.value), other)
 
     def __abs__(self) -> "Tensor[T]":
         return self._apply(Abs(), self)

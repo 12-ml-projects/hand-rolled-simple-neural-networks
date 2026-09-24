@@ -4,7 +4,7 @@ from typing import TypeAlias, overload
 
 from src.tensor import Tensor
 
-ScalarFunction: TypeAlias = Callable[..., "float | Tensor[float]"]
+ScalarFunction: TypeAlias = Callable[..., "float | Tensor"]
 
 
 @overload
@@ -63,8 +63,10 @@ def _approx_partial(
 
 
 def _nudge(inputs: Sequence[float], i: int, delta: float) -> list[float]:
-    nudged = list(inputs)
-    nudged[i] += delta
+    nudged = [float(value) for value in inputs]
+    # Rebinding, not `+=`: an ndarray element would be mutated in place, and the
+    # caller's array along with it.
+    nudged[i] = nudged[i] + delta
 
     return nudged
 
@@ -72,4 +74,4 @@ def _nudge(inputs: Sequence[float], i: int, delta: float) -> list[float]:
 def _evaluate(f: ScalarFunction, inputs: Sequence[float]) -> float:
     result = f(*inputs)
 
-    return result.value if isinstance(result, Tensor) else result
+    return float(result.value) if isinstance(result, Tensor) else float(result)

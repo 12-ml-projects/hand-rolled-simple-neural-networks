@@ -25,7 +25,7 @@ class TestApproxGrad:
         assert approx_equals(approx_grad(lambda x, y: x, [1.0, 2.0]), [1.0, 0.0])
 
     def test_function_may_return_a_tensor(self) -> None:
-        def f(x: float) -> Tensor[float]:
+        def f(x: float) -> Tensor:
             return Tensor(x) * x
 
         assert approx_equals(approx_grad(f, [3.0]), [6.0])

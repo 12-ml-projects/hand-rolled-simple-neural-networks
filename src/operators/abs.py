@@ -1,20 +1,16 @@
-from typing import TypeVar
+import numpy as np
 
-from src.custom_types import ValueLike
+from src.custom_types import Value
 
 from .operator import Operator
 
-T = TypeVar("T", bound=ValueLike)
 
+class Abs(Operator):
+    def forward(self, x: Value) -> Value:  # type: ignore[override]
+        return np.abs(x)
 
-class Abs(Operator[T]):
-    def forward(self, x: T) -> T:  # type: ignore[override]
-        return abs(x)  # type: ignore
-
-    def backward(self, adjoint: T, x: T) -> tuple[T]:  # type: ignore[override]
-        if x > 0:  # type: ignore
-            return (adjoint,)
-        elif x < 0:  # type: ignore
-            return (-adjoint,)
-        else:
-            return (0,)  # type: ignore
+    def backward(  # type: ignore[override]
+        self, adjoint: Value, x: Value
+    ) -> tuple[Value]:
+        # np.sign is 0 at the kink, as in PyTorch.
+        return (adjoint * np.sign(x),)

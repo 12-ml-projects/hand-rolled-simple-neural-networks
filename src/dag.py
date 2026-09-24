@@ -1,32 +1,29 @@
-from typing import Generic, Optional, TypeAlias, TypeVar, overload
+from typing import Optional, TypeAlias, overload
 
-from src.custom_types import ValueLike
+from src.custom_types import Value
 from src.operators import Operator, Source
 
-T = TypeVar("T", bound=ValueLike)
+Dependencies: TypeAlias = list["DAG"]
 
 
-Dependencies: TypeAlias = list["DAG[T]"]
-
-
-class DAG(Generic[T]):
+class DAG:
     """Computational DAG for representing dependencies between tensors."""
 
     dependencies: Dependencies
-    operator: Operator[T]
-    value: T
-    adjoint: T | None
+    operator: Operator
+    value: Value
+    adjoint: Value | None
     requires_grad: bool
 
     @overload
     def __init__(
-        self, operator: Source, *, value: T, _requires_grad: Optional[bool] = None
+        self, operator: Source, *, value: Value, _requires_grad: Optional[bool] = None
     ) -> None: ...
 
     @overload
     def __init__(
         self,
-        operator: Operator[T],
+        operator: Operator,
         dependencies: Dependencies,
         *,
         _requires_grad: Optional[bool] = None,
@@ -34,10 +31,10 @@ class DAG(Generic[T]):
 
     def __init__(
         self,
-        operator: Operator[T],
+        operator: Operator,
         dependencies: Optional[Dependencies] = None,
         *,
-        value: Optional[T] = None,
+        value: Optional[Value] = None,
         _requires_grad: Optional[bool] = None,
     ) -> None:
         self.operator = operator
@@ -64,16 +61,13 @@ class DAG(Generic[T]):
     def is_leaf(self) -> bool:
         return self.arity == 0
 
-    def backward(self, adjoint: T) -> None:
+    def backward(self, adjoint: Value) -> None:
         if not self.requires_grad:
             return
 
         order = self._topological_order()
 
-        # An intermediate adjoint belongs to one pass and one seed, so clearing
-        # them here keeps a second backward() from double-counting. Leaves are
-        # left alone: they accumulate until an explicit zero_grad(), which is
-        # what lets gradients pile up across a minibatch.
+        # Leaves are left alone; they accumulate until an explicit zero_grad().
         self._reset_intermediates(order)
 
         self.adjoint = adjoint
@@ -97,10 +91,7 @@ class DAG(Generic[T]):
         """Clear every intermediate adjoint reachable from here, leaves aside."""
         self._reset_intermediates(self._topological_order())
 
-    def _reset_intermediates(self, order: list["DAG[T]"]) -> None:
-        # The topological order already holds every reachable node exactly once,
-        # so this is a flat pass: recursing into dependencies here would re-walk
-        # shared subgraphs once per path reaching them.
+    def _reset_intermediates(self, order: list["DAG"]) -> None:
         for node in order:
             if not node.is_leaf():
                 node.adjoint = None
@@ -108,22 +99,24 @@ class DAG(Generic[T]):
     def zero_grad(self) -> None:
         self.adjoint = None
 
-    def accumulate(self, contribution: T) -> None:
+    def accumulate(self, contribution: Value) -> None:
         if self.adjoint is None:
-            self.adjoint = contribution
+            # Copy: an operator may hand the same array to several dependencies
+            # (Add returns (adjoint, adjoint)) and `+=` below mutates in place.
+            self.adjoint = contribution.copy()
         else:
             self.adjoint += contribution
 
-    def _topological_order(self) -> list["DAG[T]"]:
+    def _topological_order(self) -> list["DAG"]:
         return self.visit(self)
 
     @classmethod
     def visit(
         cls,
-        node: "DAG[T]",
-        seen: Optional[set["DAG[T]"]] = None,
-        order: Optional[list["DAG[T]"]] = None,
-    ) -> list["DAG[T]"]:
+        node: "DAG",
+        seen: Optional[set["DAG"]] = None,
+        order: Optional[list["DAG"]] = None,
+    ) -> list["DAG"]:
         # NOTE for very large networks, or for e.g., summing over losses,
         # this recursive approach may hit the recursion limit. But fails loudly.
         # We will cross that bridge when we get there.

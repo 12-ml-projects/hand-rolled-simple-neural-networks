@@ -1,29 +1,38 @@
-from math import log
-from typing import TypeVar
+import numpy as np
 
-from src.custom_types import ValueLike
+from src.custom_types import Value
 
 from .operator import Operator
 
-T = TypeVar("T", bound=ValueLike)
 
+class Pow(Operator):
+    """x ** y where the exponent is itself part of the graph."""
 
-class Pow(Operator[T]):
-    def forward(self, x: T, y: T) -> T:  # type: ignore[override]
+    def forward(self, x: Value, y: Value) -> Value:  # type: ignore[override]
         return x**y
 
-    def backward(self, adjoint: T, x: T, y: T) -> tuple[T, T]:  # type: ignore[override]
-        return (adjoint * y * x ** (y - 1), adjoint * x**y * log(x))  # type: ignore
+    def backward(  # type: ignore[override]
+        self, adjoint: Value, x: Value, y: Value
+    ) -> tuple[Value, Value]:
+        # log(x) only exists for x > 0; off there x**y has no derivative in y.
+        return (
+            adjoint * y * x ** (y - 1),
+            adjoint * x**y * np.log(np.where(x > 0, x, 1.0)),
+        )
 
 
-class UnaryPow(Operator[T]):
-    exponent: T
+class UnaryPow(Operator):
+    """x ** n for a constant n, kept off the graph so no log is ever needed."""
 
-    def __init__(self, exponent: T) -> None:
+    exponent: Value
+
+    def __init__(self, exponent: Value) -> None:
         self.exponent = exponent
 
-    def forward(self, x: T) -> T:  # type: ignore[override]
+    def forward(self, x: Value) -> Value:  # type: ignore[override]
         return x**self.exponent
 
-    def backward(self, adjoint: T, x: T) -> tuple[T]:  # type: ignore[override]
-        return (adjoint * self.exponent * x ** (self.exponent - 1),)  # type: ignore
+    def backward(  # type: ignore[override]
+        self, adjoint: Value, x: Value
+    ) -> tuple[Value]:
+        return (adjoint * self.exponent * x ** (self.exponent - 1),)

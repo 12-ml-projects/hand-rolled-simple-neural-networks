@@ -1,15 +1,13 @@
-from typing import TypeVar
-
-from src.custom_types import ValueLike
+from src.custom_types import Value
 
 from .operator import Operator
 
-T = TypeVar("T", bound=ValueLike)
 
-
-class Sub(Operator[T]):
-    def forward(self, x: T, y: T) -> T:  # type: ignore[override]
+class Sub(Operator):
+    def forward(self, x: Value, y: Value) -> Value:  # type: ignore[override]
         return x - y
 
-    def backward(self, adjoint: T, x: T, y: T) -> tuple[T, T]:  # type: ignore[override]
+    def backward(  # type: ignore[override]
+        self, adjoint: Value, x: Value, y: Value
+    ) -> tuple[Value, Value]:
         return (adjoint, -adjoint)

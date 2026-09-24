@@ -1,16 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
 
-from src.custom_types import ValueLike
-
-T = TypeVar("T", bound=ValueLike)
+from src.custom_types import Value
 
 
-class Operator(ABC, Generic[T]):
+class Operator(ABC):
     @abstractmethod
-    def forward(self, *args: T, **kwargs: T) -> T:
+    def forward(self, *args: Value) -> Value:
         pass
 
     @abstractmethod
-    def backward(self, adjoint: T, *args: T) -> tuple[T, ...]:
+    def backward(self, adjoint: Value, *args: Value) -> tuple[Value, ...]:
         pass

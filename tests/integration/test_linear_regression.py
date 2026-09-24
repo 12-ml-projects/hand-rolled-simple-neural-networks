@@ -6,7 +6,7 @@ import pytest
 from src.tensor import Tensor
 from tests.helpers.least_squares.fit import least_squares_fit
 
-Parameters: TypeAlias = tuple[Tensor[float], Tensor[float]]
+Parameters: TypeAlias = tuple[Tensor, Tensor]
 Sample: TypeAlias = tuple[float, float]
 
 
@@ -14,11 +14,11 @@ TRUE_SLOPE = 2.0
 TRUE_INTERCEPT = -1.0
 
 
-def linear_model(slope: Tensor[float], intercept: Tensor[float], x: float) -> Tensor:
+def linear_model(slope: Tensor, intercept: Tensor, x: float) -> Tensor:
     return slope * x + intercept
 
 
-def squared_error(prediction: Tensor[float], y: float) -> Tensor:
+def squared_error(prediction: Tensor, y: float) -> Tensor:
     return (prediction - y) ** 2
 
 

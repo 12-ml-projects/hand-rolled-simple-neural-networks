@@ -223,10 +223,10 @@ class TestBackward:
         z.backward()
 
         assert x._dag.adjoint == pytest.approx(
-            approx_grad(lambda_fn, [x.value, y.value])[0]
+            approx_grad(lambda_fn, [float(x.value), float(y.value)])[0]
         )
         assert y._dag.adjoint == pytest.approx(
-            approx_grad(lambda_fn, [x.value, y.value])[1]
+            approx_grad(lambda_fn, [float(x.value), float(y.value)])[1]
         )
 
     @pytest.mark.parametrize(
@@ -244,7 +244,9 @@ class TestBackward:
         z = lambda_fn(x)
         z.backward()
 
-        assert x._dag.adjoint == pytest.approx(approx_grad(lambda_fn, [x.value])[0])
+        assert x._dag.adjoint == pytest.approx(
+            approx_grad(lambda_fn, [float(x.value)])[0]
+        )
 
 
 class TestGradients:

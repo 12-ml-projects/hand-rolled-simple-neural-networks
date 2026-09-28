@@ -1,5 +1,6 @@
 from .abs import Abs
 from .add import Add
+from .matmul import MatMul
 from .mul import Mul
 from .neg import Neg
 from .operator import Operator
@@ -12,6 +13,7 @@ __all__ = [
     "Operator",
     "Source",
     "Mul",
+    "MatMul",
     "Add",
     "Sub",
     "TrueDiv",

@@ -7,6 +7,7 @@ from src.dag import DAG
 from src.operators import (
     Abs,
     Add,
+    MatMul,
     Mul,
     Neg,
     Operator,
@@ -22,6 +23,10 @@ Operand: TypeAlias = "Tensor | ArrayLike"
 
 class Tensor:
     _dag: DAG
+
+    # Without this, `ndarray + Tensor` makes numpy loop elementwise and hand back
+    # an object array of Tensors. None makes it defer, so Python calls __radd__.
+    __array_ufunc__ = None
 
     def __init__(self, value: ArrayLike, requires_grad: bool = True):
         self._dag = DAG(Source(), value=as_array(value), _requires_grad=requires_grad)
@@ -117,6 +122,12 @@ class Tensor:
 
     def __rmul__(self, other: Operand) -> "Tensor":
         return self._apply(Mul(), other, self)
+
+    def __matmul__(self, other: Operand) -> "Tensor":
+        return self._apply(MatMul(), self, other)
+
+    def __rmatmul__(self, other: Operand) -> "Tensor":
+        return self._apply(MatMul(), other, self)
 
     def __truediv__(self, other: Operand) -> "Tensor":
         return self._apply(TrueDiv(), self, other)

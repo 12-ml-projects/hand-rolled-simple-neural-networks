@@ -1,6 +1,6 @@
 from typing import Optional, TypeAlias, overload
 
-from src.custom_types import Value
+from src.custom_types import Array
 from src.operators import Operator, Source
 
 Dependencies: TypeAlias = list["DAG"]
@@ -11,13 +11,13 @@ class DAG:
 
     dependencies: Dependencies
     operator: Operator
-    value: Value
-    adjoint: Value | None
+    value: Array
+    adjoint: Array | None
     requires_grad: bool
 
     @overload
     def __init__(
-        self, operator: Source, *, value: Value, _requires_grad: Optional[bool] = None
+        self, operator: Source, *, value: Array, _requires_grad: Optional[bool] = None
     ) -> None: ...
 
     @overload
@@ -34,7 +34,7 @@ class DAG:
         operator: Operator,
         dependencies: Optional[Dependencies] = None,
         *,
-        value: Optional[Value] = None,
+        value: Optional[Array] = None,
         _requires_grad: Optional[bool] = None,
     ) -> None:
         self.operator = operator
@@ -61,7 +61,7 @@ class DAG:
     def is_leaf(self) -> bool:
         return self.arity == 0
 
-    def backward(self, adjoint: Value) -> None:
+    def backward(self, adjoint: Array) -> None:
         if not self.requires_grad:
             return
 
@@ -99,7 +99,7 @@ class DAG:
     def zero_grad(self) -> None:
         self.adjoint = None
 
-    def accumulate(self, contribution: Value) -> None:
+    def accumulate(self, contribution: Array) -> None:
         if self.adjoint is None:
             # Copy: an operator may hand the same array to several dependencies
             # (Add returns (adjoint, adjoint)) and `+=` below mutates in place.

@@ -1,13 +1,14 @@
 from typing import TypeAlias
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+import numpy.typing as npt
 
-Value: TypeAlias = NDArray[np.float64]
+# Scalars are 0-d arrays, so no operator has to ask which it is holding.
+Array: TypeAlias = npt.NDArray[np.float64]
 
-ValueLike: TypeAlias = ArrayLike
+ArrayLike: TypeAlias = npt.ArrayLike
 
 
-def as_value(value: ValueLike) -> Value:
+def as_array(value: ArrayLike) -> Array:
     """Coerce anything array-shaped into the graph's representation."""
     return np.asarray(value, dtype=np.float64)

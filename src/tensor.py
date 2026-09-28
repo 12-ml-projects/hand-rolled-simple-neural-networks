@@ -2,7 +2,7 @@ from typing import TypeAlias
 
 import numpy as np
 
-from src.custom_types import Value, ValueLike, as_value
+from src.custom_types import Array, ArrayLike, as_array
 from src.dag import DAG
 from src.operators import (
     Abs,
@@ -17,28 +17,28 @@ from src.operators import (
     UnaryPow,
 )
 
-Operand: TypeAlias = "Tensor | ValueLike"
+Operand: TypeAlias = "Tensor | ArrayLike"
 
 
 class Tensor:
     _dag: DAG
 
-    def __init__(self, value: ValueLike, requires_grad: bool = True):
-        self._dag = DAG(Source(), value=as_value(value), _requires_grad=requires_grad)
+    def __init__(self, value: ArrayLike, requires_grad: bool = True):
+        self._dag = DAG(Source(), value=as_array(value), _requires_grad=requires_grad)
 
     @property
-    def value(self) -> Value:
+    def value(self) -> Array:
         return self._dag.value
 
     @value.setter
-    def value(self, value: ValueLike) -> None:
+    def value(self, value: ArrayLike) -> None:
         if self._dag.dependencies:
             raise ValueError("Cannot set the value of a non-leaf Tensor.")
 
-        self._dag.value = as_value(value)
+        self._dag.value = as_array(value)
 
     @property
-    def grad(self) -> Value | None:
+    def grad(self) -> Array | None:
         return self._dag.adjoint
 
     @property
@@ -63,7 +63,7 @@ class Tensor:
         if isinstance(operand, Tensor):
             return operand._dag
 
-        return DAG(Source(), value=as_value(operand))
+        return DAG(Source(), value=as_array(operand))
 
     @classmethod
     def _apply(cls, operator: Operator, *operands: Operand) -> "Tensor":
@@ -73,23 +73,23 @@ class Tensor:
 
     def equals(self, other: Operand) -> bool:
         """Exact value equality. `==` is left as identity, as in PyTorch."""
-        other_value = other.value if isinstance(other, Tensor) else as_value(other)
+        other_value = other.value if isinstance(other, Tensor) else as_array(other)
 
         return bool(np.array_equal(self.value, other_value))
 
-    def backward(self, adjoint: ValueLike | None = None) -> None:
-        self._dag.backward(self._seed(adjoint))
+    def backward(self, adjoint: ArrayLike | None = None) -> None:
+        self._dag.backward(self._resolve_adjoint(adjoint))
 
-    def _seed(self, adjoint: ValueLike | None) -> Value:
+    def _resolve_adjoint(self, adjoint: ArrayLike | None) -> Array:
         if adjoint is not None:
-            return as_value(adjoint)
+            return as_array(adjoint)
 
         if self.value.shape != ():
             raise ValueError(
                 "backward() needs an explicit adjoint for a non-scalar tensor."
             )
 
-        return as_value(1.0)
+        return as_array(1.0)
 
     def reset(self) -> None:
         self._dag.reset()
@@ -129,7 +129,7 @@ class Tensor:
             return self._apply(UnaryPow(other.value), self)
 
         if not isinstance(other, Tensor):
-            return self._apply(UnaryPow(as_value(other)), self)
+            return self._apply(UnaryPow(as_array(other)), self)
 
         return self._apply(Pow(), self, other)
 

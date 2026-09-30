@@ -26,8 +26,7 @@ want.
 """
 
 from collections.abc import Callable, Sequence
-from math import isclose
-from typing import TypeAlias, overload
+from typing import TypeAlias
 
 import numpy as np
 
@@ -37,41 +36,6 @@ from src.tensor import Tensor
 # f is called with plain arrays, so the same lambda serves both the numerical
 # path here and the analytic one built from Tensors. It may return either.
 Function: TypeAlias = Callable[..., "ArrayLike | Tensor"]
-
-
-@overload
-def approx_equals(
-    a: float, b: float, *, rel_tol: float = ..., abs_tol: float = ...
-) -> bool: ...
-
-
-@overload
-def approx_equals(
-    a: Sequence[float],
-    b: Sequence[float],
-    *,
-    rel_tol: float = ...,
-    abs_tol: float = ...,
-) -> bool: ...
-
-
-def approx_equals(
-    a: float | Sequence[float],
-    b: float | Sequence[float],
-    *,
-    rel_tol: float = 1e-5,
-    abs_tol: float = 1e-8,
-) -> bool:
-    """Compare two numbers, or two equally long sequences element by element."""
-    if isinstance(a, Sequence) and isinstance(b, Sequence):
-        return len(a) == len(b) and all(
-            isclose(x, y, rel_tol=rel_tol, abs_tol=abs_tol) for x, y in zip(a, b)
-        )
-
-    if isinstance(a, Sequence) or isinstance(b, Sequence):
-        raise TypeError("Cannot compare a number with a sequence.")
-
-    return isclose(a, b, rel_tol=rel_tol, abs_tol=abs_tol)
 
 
 def approx_vjp(

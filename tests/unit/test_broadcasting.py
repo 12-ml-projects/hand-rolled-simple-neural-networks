@@ -35,6 +35,7 @@ BINARY_OPS = [
 ]
 
 SHAPE_PAIRS = [
+    ((), ()),  # control: two scalars
     ((3, 4), (3, 4)),  # control: nothing is broadcast
     ((3, 1), (1, 4)),  # both operands stretched
     ((8, 3), (3,)),  # rank mismatch, as a bias against a batch
@@ -62,15 +63,31 @@ def positive(*shapes: tuple[int, ...]) -> list[Array]:
     operator at once: no zero denominators for TrueDiv, and no non-positive
     bases for Pow, whose backward needs log(x).
     """
-    rng = np.random.default_rng(abs(hash(shapes)) % (2**32))
+    rng = generator(0, *shapes)
 
     return [rng.uniform(0.5, 2.0, size=shape) for shape in shapes]
 
 
 def adjoint_for(shape: tuple[int, ...]) -> Array:
-    rng = np.random.default_rng(abs(hash(("adjoint", shape))) % (2**32))
+    # Random rather than ones: an error of +d in one output position cancels -d
+    # in another under a uniform adjoint, but not under a generic one.
+    return generator(1, shape).normal(size=shape)
 
-    return rng.normal(size=shape)
+
+def generator(tag: int, *shapes: tuple[int, ...]) -> np.random.Generator:
+    """A generator keyed on the shapes, deliberately not on hash().
+
+    hash() of a tuple containing a string is randomised per interpreter run, so
+    seeding from it hands these tests different data on every invocation. Each
+    shape contributes its length before its dimensions, so ((2, 3),) and
+    ((2,), (3,)) cannot collide.
+    """
+    key = [tag]
+    for shape in shapes:
+        key.append(len(shape))
+        key.extend(shape)
+
+    return np.random.default_rng(key)
 
 
 class TestBinaryBroadcasting:

@@ -5,6 +5,8 @@ from .mul import Mul
 from .neg import Neg
 from .operator import Operator
 from .pow import Pow, UnaryPow
+from .relu import ReLU
+from .softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
 from .source import Source
 from .sub import Sub
 from .truediv import TrueDiv
@@ -21,4 +23,6 @@ __all__ = [
     "Abs",
     "Pow",
     "UnaryPow",
+    "ReLU",
+    "SoftmaxCrossEntropyLoss",
 ]

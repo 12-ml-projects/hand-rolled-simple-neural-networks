@@ -1,11 +1,11 @@
 import operator
 from typing import Callable
 
+import numpy as np
 import pytest
 
 from src.operators import Abs, Add, Mul, Neg, Pow, Source, Sub, TrueDiv
 from src.tensor import Tensor
-from tests.helpers.finite_difference.approx_grad import approx_grad
 
 BinaryOp = Callable[[object, object], object]
 UnaryOp = Callable[[object], object]
@@ -51,14 +51,24 @@ class TestForward:
 
         assert ((x + y) * x - y / x).value == pytest.approx(8.5)
 
-    def test_operations_leave_tensors_unchanged(self) -> None:
-        x = Tensor(5.0)
-        y = Tensor(10.0)
+    def test_operations_leave_operands_unchanged(self) -> None:
+        # Only meaningful on arrays: `+=` rebinds a float but mutates an
+        # ndarray, so an operator writing to its own input would corrupt the
+        # graph in place and silently. Checks the backward pass too, which is
+        # where the adjoint arrays get accumulated.
+        x = Tensor(np.array([1.0, 2.0]))
+        y = Tensor(np.array([3.0, 4.0]))
 
-        _ = x * y
+        for combine in (
+            lambda a, b: a * b,
+            lambda a, b: a + b,
+            lambda a, b: a - b,
+            lambda a, b: a / b,
+        ):
+            combine(x, y).backward(np.ones(2))
 
-        assert x.value == 5.0
-        assert y.value == 10.0
+        assert x.value == pytest.approx([1.0, 2.0])
+        assert y.value == pytest.approx([3.0, 4.0])
 
 
 class TestPlainNumbers:
@@ -186,6 +196,9 @@ class TestEquality:
         assert x != Tensor(5.0)
 
     def test_tensors_are_hashable(self) -> None:
+        # Not trivia: DAG.visit dedupes with a set, so identity hashing is what
+        # makes the topological sort terminate on a shared node. Defining
+        # __eq__ without __hash__ would set __hash__ to None and break it.
         x = Tensor(5.0)
         y = Tensor(5.0)
 
@@ -204,49 +217,14 @@ class TestBackward:
         assert x._dag.adjoint == pytest.approx(16.0)
         assert y._dag.adjoint == pytest.approx(4.0)
 
-    @pytest.mark.parametrize(
-        "x_val,y_val,lambda_fn",
-        [
-            (2.0, 3.0, lambda x, y: x**y),
-            (2.0, 3.0, lambda x, y: x * y),
-            (2.0, 3.0, lambda x, y: x + y),
-            (2.0, 3.0, lambda x, y: x - y),
-            (2.0, 3.0, lambda x, y: x / y),
-            (2.0, 3.0, lambda x, y: x / y),
-        ],
-    )
-    def test_binary_operators(self, x_val, y_val, lambda_fn) -> None:
-        x = Tensor(x_val)
-        y = Tensor(y_val)
+    def test_backward_on_a_leaf_root(self) -> None:
+        # No operator involved: the root is the leaf, so seeding it is the whole
+        # backward pass.
+        x = Tensor(2.0)
 
-        z = lambda_fn(x, y)
-        z.backward()
+        x.backward()
 
-        assert x._dag.adjoint == pytest.approx(
-            approx_grad(lambda_fn, [float(x.value), float(y.value)])[0]
-        )
-        assert y._dag.adjoint == pytest.approx(
-            approx_grad(lambda_fn, [float(x.value), float(y.value)])[1]
-        )
-
-    @pytest.mark.parametrize(
-        "x_val,lambda_fn",
-        [
-            (2.0, lambda x: -x),
-            (2.0, lambda x: x**2),
-            (2.0, lambda x: x),
-            (-2.0, lambda x: abs(x)),
-        ],
-    )
-    def test_unary_operators(self, x_val, lambda_fn) -> None:
-        x = Tensor(x_val)
-
-        z = lambda_fn(x)
-        z.backward()
-
-        assert x._dag.adjoint == pytest.approx(
-            approx_grad(lambda_fn, [float(x.value)])[0]
-        )
+        assert x.grad == pytest.approx(1.0)
 
 
 class TestGradients:

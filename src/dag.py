@@ -1,5 +1,6 @@
 from typing import Optional, TypeAlias, overload
 
+from src.broadcasting import unbroadcast
 from src.custom_types import Array
 from src.operators import Operator, Source
 
@@ -85,7 +86,7 @@ class DAG:
                 if not dep.requires_grad:
                     continue
 
-                dep.accumulate(contribution)
+                dep.accumulate(unbroadcast(contribution, dep.value.shape))
 
     def reset(self) -> None:
         """Clear every intermediate adjoint reachable from here, leaves aside."""

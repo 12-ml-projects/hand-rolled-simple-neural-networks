@@ -300,3 +300,37 @@ class TestGradients:
         x.zero_grad()
         z.backward()
         assert x._dag.adjoint == pytest.approx(4.0)
+
+
+class TestMethods:
+    def test_relu_gates_each_entry(self) -> None:
+        x = Tensor(np.array([-2.0, -0.5, 0.5, 2.0]))
+
+        activated = x.relu()
+        activated.backward(np.ones(4))
+
+        assert activated.value == pytest.approx([0.0, 0.0, 0.5, 2.0])
+        assert x.grad == pytest.approx([0.0, 0.0, 1.0, 1.0])
+
+    def test_relu_at_zero_is_closed_on_the_left(self) -> None:
+        x = Tensor(0.0)
+
+        x.relu().backward()
+
+        assert x.grad == pytest.approx(0.0)
+
+    def test_abs_at_zero_is_zero(self) -> None:
+        x = Tensor(0.0)
+
+        abs(x).backward()
+
+        assert x.grad == pytest.approx(0.0)
+
+    def test_sqrt(self) -> None:
+        x = Tensor(9.0)
+
+        root = x.sqrt()
+        root.backward()
+
+        assert root.value == pytest.approx(3.0)
+        assert x.grad == pytest.approx(1.0 / 6.0)

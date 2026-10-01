@@ -19,3 +19,9 @@ settings.json
 
 # --- tox --- #
 .tox
+# --- datasets --- #
+data/
+mlruns/
+
+# -- mlflow -- #
+mlflow.db

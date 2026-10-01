@@ -9,6 +9,7 @@ from .relu import ReLU
 from .softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
 from .source import Source
 from .sub import Sub
+from .sum import Sum
 from .truediv import TrueDiv
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "UnaryPow",
     "ReLU",
     "SoftmaxCrossEntropyLoss",
+    "Sum",
 ]

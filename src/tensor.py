@@ -12,11 +12,14 @@ from src.operators import (
     Neg,
     Operator,
     Pow,
+    ReLU,
     Source,
     Sub,
+    Sum,
     TrueDiv,
     UnaryPow,
 )
+from src.operators.sum import Axis
 
 Operand: TypeAlias = "Tensor | ArrayLike"
 
@@ -152,3 +155,25 @@ class Tensor:
 
     def __abs__(self) -> "Tensor":
         return self._apply(Abs(), self)
+
+    def relu(self) -> "Tensor":
+        return self._apply(ReLU(), self)
+
+    def sum(self, axis: Axis = None, keepdims: bool = False) -> "Tensor":
+        return self._apply(Sum(axis, keepdims), self)
+
+    def mean(self, axis: Axis = None, keepdims: bool = False) -> "Tensor":
+        # sum / n, so the gradient comes free from Sum and TrueDiv.
+        return self.sum(axis, keepdims) / self._reduced_count(axis)
+
+    def _reduced_count(self, axis: Axis) -> int:
+        if axis is None:
+            return self.value.size
+
+        axes = (axis,) if isinstance(axis, int) else axis
+
+        return int(np.prod([self.shape[a] for a in axes]))
+
+    def sqrt(self) -> "Tensor":
+        # A constant exponent, so this reuses UnaryPow and needs no new operator.
+        return self**0.5

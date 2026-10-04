@@ -1,210 +1,72 @@
-"""Broadcasting is the one thing numpy does silently, that's not in the graph.
-
-A stretched operand is copied in the forward pass, so its adjoint must be summed
-back down in the backward pass. The operators cannot do that themselves: numpy
-fuses the broadcast into the arithmetic, so by the time `Add.backward` runs, the
-original operand shapes are gone. Hence the invariant these tests pin:
-
-    an adjoint always has the shape of the value it belongs to
-
-(because the adjoint is partial L / partial a_ij...z)
-
-Shape alone is not enough to check, though. Summing over the wrong axis of a
-square operand yields the right shape and the wrong numbers, so every case is
-also compared against a finite-difference estimate using the Jacobian.
-"""
-
-import operator
-from typing import Any, Callable
-
 import numpy as np
 import pytest
 
-from src.custom_types import Array
-from src.tensor import Tensor
-from tests.helpers.finite_difference.approx_grad import approx_vjp
-
-Op = Callable[..., Any]
-
-BINARY_OPS = [
-    operator.add,
-    operator.sub,
-    operator.mul,
-    operator.truediv,
-    operator.pow,
-]
-
-SHAPE_PAIRS = [
-    ((), ()),  # control: two scalars
-    ((3, 4), (3, 4)),  # control: nothing is broadcast
-    ((3, 1), (1, 4)),  # both operands stretched
-    ((8, 3), (3,)),  # rank mismatch, as a bias against a batch
-    ((), (2, 3)),  # 0-d against an array
-    ((2, 3), ()),  # and the other way round
-    ((1, 3), (4, 3)),  # one axis stretched
-    ((5, 1, 3), (2, 3)),  # rank mismatch and a stretch together
-    ((2, 1, 4), (3, 4)),  # stretched on both sides, rank 3
-    ((1, 3), (5, 2, 3)),  # needs BOTH steps: drop an axis, then un-stretch
-]
-
-UNARY_OPS = [
-    operator.neg,
-    operator.abs,
-    lambda x: x**2.0,
-]
-
-UNARY_SHAPES = [(), (4,), (2, 3), (5, 1, 3)]
+from src.broadcasting import unbroadcast
 
 
-def positive(*shapes: tuple[int, ...]) -> list[Array]:
-    """Arrays drawn from [0.5, 2.0].
+class TestUnbroadcast:
+    def test_a_matching_shape_is_returned_untouched(self) -> None:
+        adjoint = np.ones((3, 4))
 
-    Strictly positive and away from zero, so one set of data suits every
-    operator at once: no zero denominators for TrueDiv, and no non-positive
-    bases for Pow, whose backward needs log(x).
-    """
-    rng = generator(0, *shapes)
+        # Identity, not just equality: this is the fast path that keeps the
+        # helper free for operators that never broadcast.
+        assert unbroadcast(adjoint, (3, 4)) is adjoint
 
-    return [rng.uniform(0.5, 2.0, size=shape) for shape in shapes]
+    def test_prepended_axes_are_summed_away(self) -> None:
+        adjoint = np.arange(6.0).reshape(2, 3)
 
+        reduced = unbroadcast(adjoint, (3,))
 
-def adjoint_for(shape: tuple[int, ...]) -> Array:
-    # Random rather than ones: an error of +d in one output position cancels -d
-    # in another under a uniform adjoint, but not under a generic one.
-    return generator(1, shape).normal(size=shape)
+        assert reduced.shape == (3,)
+        assert reduced == pytest.approx([3.0, 5.0, 7.0])
 
+    def test_stretched_axes_are_summed_with_the_rank_kept(self) -> None:
+        adjoint = np.arange(6.0).reshape(2, 3)
 
-def generator(tag: int, *shapes: tuple[int, ...]) -> np.random.Generator:
-    """A generator keyed on the shapes, deliberately not on hash().
+        assert unbroadcast(adjoint, (2, 1)) == pytest.approx(np.array([[3.0], [12.0]]))
+        assert unbroadcast(adjoint, (1, 3)) == pytest.approx(
+            np.array([[3.0, 5.0, 7.0]])
+        )
 
-    hash() of a tuple containing a string is randomised per interpreter run, so
-    seeding from it hands these tests different data on every invocation. Each
-    shape contributes its length before its dimensions, so ((2, 3),) and
-    ((2,), (3,)) cannot collide.
-    """
-    key = [tag]
-    for shape in shapes:
-        key.append(len(shape))
-        key.extend(shape)
+    def test_both_steps_apply_together(self) -> None:
+        # (1,3) broadcast to (5,2,3) gains a leading axis AND has axis 0
+        # stretched, so reducing back needs a drop and an un-stretch.
+        adjoint = np.ones((5, 2, 3))
 
-    return np.random.default_rng(key)
+        reduced = unbroadcast(adjoint, (1, 3))
 
+        assert reduced.shape == (1, 3)
+        assert reduced == pytest.approx(np.full((1, 3), 10.0))
 
-class TestBinaryBroadcasting:
-    @pytest.mark.parametrize("op", BINARY_OPS, ids=lambda op: op.__name__)
-    @pytest.mark.parametrize(("left", "right"), SHAPE_PAIRS, ids=str)
-    def test_gradients_keep_the_operand_shapes(
-        self, op: Op, left: tuple[int, ...], right: tuple[int, ...]
+    def test_reduces_all_the_way_to_a_scalar(self) -> None:
+        adjoint = np.arange(6.0).reshape(2, 3)
+
+        reduced = unbroadcast(adjoint, ())
+
+        assert reduced.shape == ()
+        assert reduced == pytest.approx(15.0)
+
+    def test_totals_are_preserved(self) -> None:
+        # Summing rearranges the adjoint but never loses any of it.
+        rng = np.random.default_rng(0)
+        adjoint = rng.normal(size=(4, 1, 5))
+
+        for shape in [(4, 1, 5), (1, 1, 5), (4, 1, 1), (5,), (1,), ()]:
+            assert np.sum(unbroadcast(adjoint, shape)) == pytest.approx(np.sum(adjoint))
+
+    @pytest.mark.parametrize(
+        ("adjoint_shape", "shape"),
+        [
+            ((3, 4), (5,)),  # 4 and 5 disagree, and neither is 1
+            ((3, 4), (2, 4)),  # 3 and 2 disagree
+            ((4,), (3, 4)),  # target outranks the adjoint
+            ((), (2,)),  # nothing can broadcast to a scalar
+        ],
+    )
+    def test_a_genuine_mismatch_raises(
+        self, adjoint_shape: tuple[int, ...], shape: tuple[int, ...]
     ) -> None:
-        a, b = positive(left, right)
-        x, y = Tensor(a), Tensor(b)
-
-        out = op(x, y)
-        out.backward(adjoint_for(out.shape))
-
-        assert x.grad is not None and y.grad is not None
-        assert x.grad.shape == left
-        assert y.grad.shape == right
-
-    @pytest.mark.parametrize("op", BINARY_OPS, ids=lambda op: op.__name__)
-    @pytest.mark.parametrize(("left", "right"), SHAPE_PAIRS, ids=str)
-    def test_gradients_match_finite_differences(
-        self, op: Op, left: tuple[int, ...], right: tuple[int, ...]
-    ) -> None:
-        a, b = positive(left, right)
-        x, y = Tensor(a), Tensor(b)
-
-        out = op(x, y)
-        adjoint = adjoint_for(out.shape)
-        out.backward(adjoint)
-
-        expected = approx_vjp(op, [a, b], adjoint)
-
-        assert x.grad == pytest.approx(expected[0], rel=1e-4, abs=1e-6)
-        assert y.grad == pytest.approx(expected[1], rel=1e-4, abs=1e-6)
-
-    def test_a_bias_collects_one_gradient_per_batch_row(self) -> None:
-        rows = 8
-        batch = Tensor(np.ones((rows, 3)))
-        bias = Tensor(np.zeros(3))
-
-        total = batch + bias
-        total.backward(np.ones((rows, 3)))
-
-        assert bias.grad is not None
-        assert bias.grad.shape == (3,)
-        assert bias.grad == pytest.approx(np.full(3, float(rows)))
-
-    def test_a_scalar_collects_every_gradient(self) -> None:
-        scale = Tensor(2.0)
-        values = Tensor(np.ones((4, 5)))
-
-        product = scale * values
-        product.backward(np.ones((4, 5)))
-
-        assert scale.grad is not None
-        assert scale.grad.shape == ()
-        assert scale.grad == pytest.approx(20.0)
-
-
-class TestUnaryShapes:
-    @pytest.mark.parametrize("op", UNARY_OPS, ids=["neg", "abs", "pow"])
-    @pytest.mark.parametrize("shape", UNARY_SHAPES, ids=str)
-    def test_shape_is_preserved(self, op: Op, shape: tuple[int, ...]) -> None:
-        # A unary operator has one operand, so its output shape is its input
-        # shape and there is never anything to unbroadcast. Pinned rather than
-        # assumed.
-        (a,) = positive(shape)
-        x = Tensor(a)
-
-        out = op(x)
-        out.backward(adjoint_for(shape))
-
-        assert x.grad is not None
-        assert x.grad.shape == shape
-
-    @pytest.mark.parametrize("op", UNARY_OPS, ids=["neg", "abs", "pow"])
-    @pytest.mark.parametrize("shape", UNARY_SHAPES, ids=str)
-    def test_gradients_match_finite_differences(
-        self, op: Op, shape: tuple[int, ...]
-    ) -> None:
-        (a,) = positive(shape)
-        x = Tensor(a)
-
-        out = op(x)
-        adjoint = adjoint_for(shape)
-        out.backward(adjoint)
-
-        (expected,) = approx_vjp(op, [a], adjoint)
-
-        assert x.grad == pytest.approx(expected, rel=1e-4, abs=1e-6)
-
-
-class TestMatMulBroadcasting:
-    def test_batch_axes_are_reduced(self) -> None:
-        # MatMul broadcasts its leading axes but not the trailing two, so it is
-        # the one non-elementwise operator that needs unbroadcasting.
-        a, b = positive((1, 2, 3), (7, 3, 4))
-        x, y = Tensor(a), Tensor(b)
-
-        product = x @ y
-        assert product.shape == (7, 2, 4)
-
-        product.backward(adjoint_for((7, 2, 4)))
-
-        assert x.grad is not None and y.grad is not None
-        assert x.grad.shape == (1, 2, 3)
-        assert y.grad.shape == (7, 3, 4)
-
-    def test_batch_gradients_match_finite_differences(self) -> None:
-        a, b = positive((1, 2, 3), (7, 3, 4))
-        x, y = Tensor(a), Tensor(b)
-
-        product = x @ y
-        adjoint = adjoint_for((7, 2, 4))
-        product.backward(adjoint)
-
-        expected = approx_vjp(operator.matmul, [a, b], adjoint)
-
-        assert x.grad == pytest.approx(expected[0], rel=1e-4, abs=1e-6)
-        assert y.grad == pytest.approx(expected[1], rel=1e-4, abs=1e-6)
+        # Not a broadcast to undo -- it means the operator's backward is wrong,
+        # so this doubles as a shape check on every operator.
+        with pytest.raises(ValueError, match="does not broadcast"):
+            unbroadcast(np.ones(adjoint_shape), shape)

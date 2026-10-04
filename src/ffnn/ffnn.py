@@ -1,9 +1,10 @@
 import numpy as np
 
+from src.ffnn.model import Model
 from src.tensor import Tensor
 
 
-class Mlp:
+class Mlp(Model):
     def __init__(
         self,
         input_size: int,

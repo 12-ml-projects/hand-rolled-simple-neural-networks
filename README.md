@@ -3,7 +3,8 @@
 A reverse-mode automatic differentiation engine and a feedforward neural
 network, built on numpy's arithmetic and nothing else. No PyTorch, no autograd,
 no `nn.Module` — the computational graph, the backward pass, the operators and
-their gradients are all implemented here.
+their gradients are all implemented here. Nothing under `src/` imports anything
+but numpy, except `src/onnx/`, which exists to talk to the outside world.
 
 Accompanies chapter 1 of *12 Machine Learning Projects*.
 
@@ -64,6 +65,7 @@ helps.
 | `src/operators/` | one class per operation, each with a `forward` and a vector-Jacobian product |
 | `src/broadcasting.py` | reduces an adjoint back to its operand's shape — the adjoint of a broadcast is a sum |
 | `src/ffnn/` | the network, the optimiser, the loss, and the MNIST loader |
+| `src/onnx/` | export to ONNX: one mapping entry per operator, and a walk of the graph |
 | `experiments/` | runnable experiments; the only place that depends on MLflow or click |
 | `tests/helpers/finite_difference/` | numerical gradients, used to check every analytic one |
 
@@ -89,6 +91,39 @@ defaults:
 ```bash
 poetry run python -m experiments.train_test_ffnn --epochs 10
 ```
+
+## ONNX
+
+A trained model exports to ONNX, so the graph built here can be run by
+something that has never heard of this codebase:
+
+```python
+model = Mlp(784, 128, 10, rng)
+# ... train ...
+proto = model.export(Tensor(features[:1], requires_grad=False))
+```
+
+Export needs an example input because the graph is built by tracing: nothing
+exists until a forward pass has run. That is the same reason
+`torch.onnx.export` asks for one.
+
+The interesting part is that **every leaf of the graph is one of three things,
+and nothing in the graph says which**:
+
+| leaf | becomes | why |
+|---|---|---|
+| the features | `graph.input` | a name, a dtype and a shape — no data |
+| a weight | `graph.initializer` | an input whose value travels inside the file |
+| a constant in an expression | a `Constant` node | so an import can tell it from a weight and leave it untrained |
+
+That third row is why `Model.parameters()` is what unblocks the export: ONNX has
+no "trainable" flag, so "initializer" means weight only by convention. If the
+weights were exported as inputs the file would contain no weights at all —
+an architecture with the training thrown away.
+
+One operator is not one-for-one. `UnaryPow` keeps its exponent as operator
+state, and ONNX keeps no values outside tensors, so it emits a `Constant`
+feeding an ordinary two-input `Pow`.
 
 ## Experiment tracking
 

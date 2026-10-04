@@ -8,17 +8,17 @@ Axis = int | tuple[int, ...] | None
 
 
 class Sum(Operator):
-    _axis: Axis
-    _keepdims: bool
+    axis: Axis
+    keepdims: bool
 
     def __init__(self, axis: Axis = None, keepdims: bool = False) -> None:
-        self._axis = axis
-        self._keepdims = keepdims
+        self.axis = axis
+        self.keepdims = keepdims
 
     def forward(self, x: Array) -> Array:  # type: ignore[override]
         # numpy overloads keepdims on Literal[True]/[False], so a bool fits none.
         total = np.sum(  # type: ignore[call-overload]
-            x, axis=self._axis, keepdims=self._keepdims
+            x, axis=self.axis, keepdims=self.keepdims
         )
 
         return as_array(total)
@@ -30,7 +30,7 @@ class Sum(Operator):
         return (np.broadcast_to(self._restore_axes(adjoint), x.shape).copy(),)
 
     def _restore_axes(self, adjoint: Array) -> Array:
-        if self._keepdims or self._axis is None:
+        if self.keepdims or self.axis is None:
             return adjoint
 
-        return np.expand_dims(adjoint, self._axis)
+        return np.expand_dims(adjoint, self.axis)

@@ -12,6 +12,7 @@ dependencies = [
     "numpy (>=2.0,<3.0)",
     "click (>=8.5.0,<9.0.0)",
     "mlflow (>=3.16.1,<4.0.0)",
+    "onnx (>=1.23.1,<2.0.0)",
 ]
 
 
@@ -24,7 +25,8 @@ build-backend = "poetry.core.masonry.api"
 
 [dependency-groups]
 dev = [
-    "pytest (>=9.1.1,<10.0.0)"
+    "pytest (>=9.1.1,<10.0.0)",
+    "onnxruntime (>=1.30.0,<2.0.0)"
 ]
 
 
